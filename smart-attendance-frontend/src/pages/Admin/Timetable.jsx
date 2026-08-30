@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField, FormHelperText
+  FormControl, InputLabel, Select, MenuItem, TextField, FormHelperText, Alert
 } from '@mui/material';
-import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle } from 'lucide-react';
+import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle, Link2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DashboardLayout from '../../components/layouts/DashboardLayout';
 import { getTimetables, createTimetable, updateTimetable, deleteTimetable, getClasses, getSubjects, getTeachers } from '../../services/adminApi';
+import api from '../../services/api';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -23,8 +24,10 @@ const Timetable = () => {
   const [openConfirm, setOpenConfirm] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [assigningSubject, setAssigningSubject] = useState(false);
+  const [showAssignmentHint, setShowAssignmentHint] = useState(false);
 
-  const { control, handleSubmit, reset, formState: { errors }, getValues } = useForm({
+  const { control, handleSubmit, reset, formState: { errors }, watch } = useForm({
     defaultValues: {
       class_id: '',
       subject_id: '',
@@ -35,6 +38,9 @@ const Timetable = () => {
       room: ''
     }
   });
+
+  const selectedClass = watch('class_id');
+  const selectedSubject = watch('subject_id');
 
   useEffect(() => {
     fetchData();
@@ -60,6 +66,33 @@ const Timetable = () => {
     }
   };
 
+  // Auto-assign subject to class if not already assigned
+  const handleAutoAssign = async () => {
+    if (!selectedClass || !selectedSubject) {
+      alert('Please select both class and subject first');
+      return;
+    }
+
+    setAssigningSubject(true);
+    try {
+      await api.post('/admin/assignments/class-subject', {
+        class_id: parseInt(selectedClass),
+        subject_id: parseInt(selectedSubject)
+      });
+      
+      alert('✅ Subject assigned to class successfully! You can now create the timetable entry.');
+      setShowAssignmentHint(false);
+    } catch (err) {
+      if (err.response?.status === 409) {
+        alert('This subject is already assigned to this class. The error might be from another validation.');
+      } else {
+        alert(err.response?.data?.detail || 'Failed to assign subject');
+      }
+    } finally {
+      setAssigningSubject(false);
+    }
+  };
+
   const onSubmit = async (data) => {
     setFormLoading(true);
     try {
@@ -82,6 +115,7 @@ const Timetable = () => {
       setOpenForm(false);
       reset();
       setSelectedItem(null);
+      setShowAssignmentHint(false);
       fetchData();
     } catch (err) {
       console.error('Error creating timetable:', err);
@@ -96,9 +130,11 @@ const Timetable = () => {
           } else if (details) {
             errorMessage = details;
           }
-        } else if (err.response.status === 400 || err.response.status === 409) {
-          // Catch the "Subject is not assigned to this class" error
-          errorMessage = err.response.data.detail || 'This subject is not assigned to the selected class, or a conflict exists.';
+        } else if (err.response.status === 400 || err.response.data?.detail === "Subject is not assigned to this class") {
+          errorMessage = 'Subject is not assigned to this class. Please assign it first.';
+          setShowAssignmentHint(true); // Show the auto-assign button
+        } else if (err.response.status === 409) {
+          errorMessage = 'A timetable entry already exists for this time slot';
         } else if (err.response.status === 404) {
           errorMessage = 'Class, Subject, or Teacher not found';
         } else if (err.response.data?.detail) {
@@ -145,6 +181,7 @@ const Timetable = () => {
           onClick={() => {
             setSelectedItem(null);
             reset();
+            setShowAssignmentHint(false);
             setOpenForm(true);
           }}
         >
@@ -189,7 +226,7 @@ const Timetable = () => {
                               <IconButton size="small" color="error" onClick={() => { setSelectedItem(t); setOpenConfirm(true); }}>
                                 <Trash2 size={16} />
                               </IconButton>
-            </Box>
+                            </Box>
                           </Box>
                         </Grid>
                       );
@@ -245,12 +282,29 @@ const Timetable = () => {
       </Box>
 
       {/* Add/Edit Timetable Dialog */}
-      <Dialog open={openForm} onClose={() => { setOpenForm(false); reset(); }} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
+      <Dialog open={openForm} onClose={() => { setOpenForm(false); reset(); setShowAssignmentHint(false); }} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
             {selectedItem ? 'Edit Timetable' : 'Add Timetable Entry'}
           </DialogTitle>
           <DialogContent dividers sx={{ pt: 2 }}>
+            {showAssignmentHint && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  The selected subject is not assigned to this class.
+                </Typography>
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  startIcon={assigningSubject ? <CircularProgress size={16} color="inherit" /> : <Link2 size={14} />}
+                  onClick={handleAutoAssign}
+                  disabled={assigningSubject || !selectedClass || !selectedSubject}
+                >
+                  {assigningSubject ? 'Assigning...' : 'Auto-Assign Subject to Class'}
+                </Button>
+              </Alert>
+            )}
+
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
                 <Controller 
@@ -384,7 +438,7 @@ const Timetable = () => {
             </Grid>
           </DialogContent>
           <DialogActions sx={{ p: 2.5, pt: 2 }}>
-            <Button onClick={() => { setOpenForm(false); reset(); }} disabled={formLoading}>Cancel</Button>
+            <Button onClick={() => { setOpenForm(false); reset(); setShowAssignmentHint(false); }} disabled={formLoading}>Cancel</Button>
             <Button type="submit" variant="contained" disabled={formLoading}>
               {formLoading ? <CircularProgress size={24} color="inherit" /> : (selectedItem ? 'Update' : 'Add')}
             </Button>
