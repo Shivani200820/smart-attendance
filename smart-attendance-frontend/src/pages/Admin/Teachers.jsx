@@ -62,25 +62,58 @@ const Teachers = () => {
       fetchData();
     }
   };
-
-  const onSubmit = async (data) => {
-    setFormLoading(true);
-    try {
-      if (selectedItem) {
-        await updateTeacher(selectedItem.id, data);
-      } else {
-        await createTeacher(data);
-      }
-      setOpenForm(false);
-      reset();
-      setSelectedItem(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.detail?.[0]?.msg || 'Operation failed');
-    } finally {
-      setFormLoading(false);
+const onSubmit = async (data) => {
+  setFormLoading(true);
+  try {
+    console.log('Creating teacher with data:', data);
+    
+    if (selectedItem) {
+      await updateTeacher(selectedItem.id, data);
+    } else {
+      await createTeacher(data);
     }
-  };
+    
+    setOpenForm(false);
+    reset();
+    setSelectedItem(null);
+    fetchData();
+    alert('Teacher added successfully!');
+  } catch (err) {
+    console.error('Error creating teacher:', err);
+    console.error('Error response:', err.response);
+    console.error('Error data:', err.response?.data);
+    
+    let errorMessage = 'Operation failed';
+    
+    if (err.response) {
+      // Backend returned an error
+      if (err.response.status === 422) {
+        // Validation error
+        const details = err.response.data.detail;
+        if (Array.isArray(details)) {
+          errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
+        } else if (details) {
+          errorMessage = details;
+        }
+      } else if (err.response.status === 409) {
+        // Conflict - likely duplicate email or employee_id
+        errorMessage = 'Teacher with this email or employee ID already exists';
+      } else if (err.response.status === 404) {
+        errorMessage = 'Department not found';
+      } else if (err.response.data?.detail) {
+        errorMessage = err.response.data.detail;
+      }
+    } else if (err.code === 'ECONNREFUSED') {
+      errorMessage = 'Backend server is not running';
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+    
+    alert(errorMessage);
+  } finally {
+    setFormLoading(false);
+  }
+};
 
   const handleDelete = async () => {
     setFormLoading(true);
