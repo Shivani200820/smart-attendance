@@ -63,21 +63,50 @@ const Students = () => {
     }
   };
 
-  const onSubmit = async (data) => {
-    setFormLoading(true);
-    try {
-      await createStudent(data);
-      alert('Student added successfully!');
-      setOpenForm(false);
-      reset({ password: 'TempPass123!' });
-      fetchData();
-    } catch (err) {
-      console.error('Error:', err);
-      alert(err.response?.data?.detail?.[0]?.msg || 'Failed to add student');
-    } finally {
-      setFormLoading(false);
+const onSubmit = async (data) => {
+  setFormLoading(true);
+  try {
+    console.log('Creating student with data:', data);
+    
+    const response = await createStudent(data);
+    console.log('Student created successfully:', response);
+    
+    alert('Student added successfully!');
+    setOpenForm(false);
+    reset();
+    fetchData();
+  } catch (err) {
+    console.error('Error creating student:', err);
+    console.error('Error response:', err.response);
+    console.error('Error data:', err.response?.data);
+    
+    let errorMessage = 'Failed to add student';
+    
+    if (err.response) {
+      // Backend returned an error
+      if (err.response.status === 422) {
+        // Validation error
+        const details = err.response.data.detail;
+        if (Array.isArray(details)) {
+          errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
+        } else if (details) {
+          errorMessage = details;
+        }
+      } else if (err.response.status === 409) {
+        // Conflict - likely duplicate email or enrollment number
+        errorMessage = 'Student with this email or enrollment number already exists';
+      } else if (err.response.data?.detail) {
+        errorMessage = err.response.data.detail;
+      }
+    } else if (err.code === 'ECONNREFUSED') {
+      errorMessage = 'Backend server is not running';
     }
-  };
+    
+    alert(errorMessage);
+  } finally {
+    setFormLoading(false);
+  }
+};
 
   // Menu Handlers
   const handleMenuOpen = (event, student) => {
