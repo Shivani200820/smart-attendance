@@ -1,0 +1,27 @@
+/* Ensure QR Scanner takes full width on mobile */
+#qr-reader {
+  width: 100% !important;
+  border: none !important;
+}
+
+#qr-reader video {
+  width: 100% !important;
+  border-radius: 8px;
+}
+
+/* Hide scrollbar for cleaner look */
+body {
+  overflow-y: scroll;
+}
+
+/* Responsive Table Wrapper */
+.MuiTableContainer-root {
+  overflow-x: auto;
+}
+
+/* Fix for MUI Drawer on mobile */
+@media (max-width: 600px) {
+  .MuiDrawer-paper {
+    width: 100% !important;
+  }
+}
