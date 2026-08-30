@@ -14,9 +14,12 @@ const menuItems = {
     { text: 'Departments', icon: <Building2 size={20} />, path: '/admin/departments' },
     { text: 'Classes', icon: <BookOpen size={20} />, path: '/admin/classes' },
     { text: 'Subjects', icon: <BookOpen size={20} />, path: '/admin/subjects' },
+    // ✅ ADD THIS NEW LINE:
+    { text: 'Class-Subjects', icon: <BookOpen size={20} />, path: '/admin/class-subjects' },
     { text: 'Timetable', icon: <Calendar size={20} />, path: '/admin/timetable' },
     { text: 'Analytics', icon: <BarChart3 size={20} />, path: '/admin/analytics' },
     { text: 'Low Attendance', icon: <AlertTriangle size={20} />, path: '/admin/low-attendance' },
+    { text: 'Reports', icon: <FileText size={20} />, path: '/admin/reports' },
   ],
   TEACHER: [
     { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/teacher/dashboard' },
