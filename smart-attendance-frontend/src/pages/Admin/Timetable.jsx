@@ -60,19 +60,38 @@ const Timetable = () => {
     }
   };
 
- const onSubmit = async (data) => {
+const onSubmit = async (data) => {
   setFormLoading(true);
   try {
     console.log('Creating timetable with data:', data);
     
-    // Ensure we're sending the correct data types
+    // Convert time if it's in 12-hour format
+    const convertTo24Hour = (time) => {
+      if (!time) return time;
+      // If already in 24-hour format (contains no AM/PM)
+      if (!time.includes('AM') && !time.includes('PM')) {
+        return time;
+      }
+      // Convert 12-hour to 24-hour format
+      const [timePart, modifier] = time.split(' ');
+      let [hours, minutes] = timePart.split(':');
+      
+      if (modifier === 'PM' && hours !== '12') {
+        hours = parseInt(hours) + 12;
+      } else if (modifier === 'AM' && hours === '12') {
+        hours = '00';
+      }
+      
+      return `${hours}:${minutes}`;
+    };
+    
     const payload = {
       class_id: parseInt(data.class_id),
       subject_id: parseInt(data.subject_id),
       teacher_id: parseInt(data.teacher_id),
       day_of_week: data.day_of_week,
-      start_time: data.start_time,
-      end_time: data.end_time,
+      start_time: convertTo24Hour(data.start_time),
+      end_time: convertTo24Hour(data.end_time),
       room: data.room || null
     };
     
@@ -96,9 +115,7 @@ const Timetable = () => {
     let errorMessage = 'Operation failed';
     
     if (err.response) {
-      // Backend returned an error
       if (err.response.status === 422) {
-        // Validation error
         const details = err.response.data.detail;
         if (Array.isArray(details)) {
           errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
@@ -106,17 +123,12 @@ const Timetable = () => {
           errorMessage = details;
         }
       } else if (err.response.status === 409) {
-        // Conflict - timetable entry already exists
         errorMessage = 'A timetable entry already exists for this time slot';
       } else if (err.response.status === 404) {
         errorMessage = 'Class, Subject, or Teacher not found';
       } else if (err.response.data?.detail) {
         errorMessage = err.response.data.detail;
       }
-    } else if (err.code === 'ECONNREFUSED') {
-      errorMessage = 'Backend server is not running';
-    } else if (err.message) {
-      errorMessage = err.message;
     }
     
     alert(errorMessage);
