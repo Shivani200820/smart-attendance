@@ -60,24 +60,70 @@ const Timetable = () => {
     }
   };
 
-  const onSubmit = async (data) => {
-    setFormLoading(true);
-    try {
-      if (selectedItem) {
-        await updateTimetable(selectedItem.id, data);
-      } else {
-        await createTimetable(data);
-      }
-      setOpenForm(false);
-      reset();
-      setSelectedItem(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.detail?.[0]?.msg || 'Operation failed');
-    } finally {
-      setFormLoading(false);
+ const onSubmit = async (data) => {
+  setFormLoading(true);
+  try {
+    console.log('Creating timetable with data:', data);
+    
+    // Ensure we're sending the correct data types
+    const payload = {
+      class_id: parseInt(data.class_id),
+      subject_id: parseInt(data.subject_id),
+      teacher_id: parseInt(data.teacher_id),
+      day_of_week: data.day_of_week,
+      start_time: data.start_time,
+      end_time: data.end_time,
+      room: data.room || null
+    };
+    
+    console.log('Payload being sent:', payload);
+    
+    if (selectedItem) {
+      await updateTimetable(selectedItem.id, payload);
+    } else {
+      await createTimetable(payload);
     }
-  };
+    
+    setOpenForm(false);
+    reset();
+    setSelectedItem(null);
+    fetchData();
+  } catch (err) {
+    console.error('Error creating timetable:', err);
+    console.error('Error response:', err.response);
+    console.error('Error data:', err.response?.data);
+    
+    let errorMessage = 'Operation failed';
+    
+    if (err.response) {
+      // Backend returned an error
+      if (err.response.status === 422) {
+        // Validation error
+        const details = err.response.data.detail;
+        if (Array.isArray(details)) {
+          errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
+        } else if (details) {
+          errorMessage = details;
+        }
+      } else if (err.response.status === 409) {
+        // Conflict - timetable entry already exists
+        errorMessage = 'A timetable entry already exists for this time slot';
+      } else if (err.response.status === 404) {
+        errorMessage = 'Class, Subject, or Teacher not found';
+      } else if (err.response.data?.detail) {
+        errorMessage = err.response.data.detail;
+      }
+    } else if (err.code === 'ECONNREFUSED') {
+      errorMessage = 'Backend server is not running';
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+    
+    alert(errorMessage);
+  } finally {
+    setFormLoading(false);
+  }
+};
 
   const handleDelete = async () => {
     setFormLoading(true);
