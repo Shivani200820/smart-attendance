@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField
+  FormControl, InputLabel, Select, MenuItem, TextField, FormHelperText
 } from '@mui/material';
-import { Clock, MapPin, User, Plus, Edit, Trash2 } from 'lucide-react';
+import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DashboardLayout from '../../components/layouts/DashboardLayout';
 import { getTimetables, createTimetable, updateTimetable, deleteTimetable, getClasses, getSubjects, getTeachers } from '../../services/adminApi';
@@ -24,7 +24,7 @@ const Timetable = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
 
-  const { control, handleSubmit, reset, formState: { errors } } = useForm({
+  const { control, handleSubmit, reset, formState: { errors }, getValues } = useForm({
     defaultValues: {
       class_id: '',
       subject_id: '',
@@ -60,82 +60,57 @@ const Timetable = () => {
     }
   };
 
-const onSubmit = async (data) => {
-  setFormLoading(true);
-  try {
-    console.log('Creating timetable with data:', data);
-    
-    // Convert time if it's in 12-hour format
-    const convertTo24Hour = (time) => {
-      if (!time) return time;
-      // If already in 24-hour format (contains no AM/PM)
-      if (!time.includes('AM') && !time.includes('PM')) {
-        return time;
-      }
-      // Convert 12-hour to 24-hour format
-      const [timePart, modifier] = time.split(' ');
-      let [hours, minutes] = timePart.split(':');
+  const onSubmit = async (data) => {
+    setFormLoading(true);
+    try {
+      const payload = {
+        class_id: parseInt(data.class_id),
+        subject_id: parseInt(data.subject_id),
+        teacher_id: parseInt(data.teacher_id),
+        day_of_week: data.day_of_week,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        room: data.room || null
+      };
       
-      if (modifier === 'PM' && hours !== '12') {
-        hours = parseInt(hours) + 12;
-      } else if (modifier === 'AM' && hours === '12') {
-        hours = '00';
+      if (selectedItem) {
+        await updateTimetable(selectedItem.id, payload);
+      } else {
+        await createTimetable(payload);
       }
       
-      return `${hours}:${minutes}`;
-    };
-    
-    const payload = {
-      class_id: parseInt(data.class_id),
-      subject_id: parseInt(data.subject_id),
-      teacher_id: parseInt(data.teacher_id),
-      day_of_week: data.day_of_week,
-      start_time: convertTo24Hour(data.start_time),
-      end_time: convertTo24Hour(data.end_time),
-      room: data.room || null
-    };
-    
-    console.log('Payload being sent:', payload);
-    
-    if (selectedItem) {
-      await updateTimetable(selectedItem.id, payload);
-    } else {
-      await createTimetable(payload);
-    }
-    
-    setOpenForm(false);
-    reset();
-    setSelectedItem(null);
-    fetchData();
-  } catch (err) {
-    console.error('Error creating timetable:', err);
-    console.error('Error response:', err.response);
-    console.error('Error data:', err.response?.data);
-    
-    let errorMessage = 'Operation failed';
-    
-    if (err.response) {
-      if (err.response.status === 422) {
-        const details = err.response.data.detail;
-        if (Array.isArray(details)) {
-          errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
-        } else if (details) {
-          errorMessage = details;
+      setOpenForm(false);
+      reset();
+      setSelectedItem(null);
+      fetchData();
+    } catch (err) {
+      console.error('Error creating timetable:', err);
+      
+      let errorMessage = 'Operation failed';
+      
+      if (err.response) {
+        if (err.response.status === 422) {
+          const details = err.response.data.detail;
+          if (Array.isArray(details)) {
+            errorMessage = details.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
+          } else if (details) {
+            errorMessage = details;
+          }
+        } else if (err.response.status === 400 || err.response.status === 409) {
+          // Catch the "Subject is not assigned to this class" error
+          errorMessage = err.response.data.detail || 'This subject is not assigned to the selected class, or a conflict exists.';
+        } else if (err.response.status === 404) {
+          errorMessage = 'Class, Subject, or Teacher not found';
+        } else if (err.response.data?.detail) {
+          errorMessage = err.response.data.detail;
         }
-      } else if (err.response.status === 409) {
-        errorMessage = 'A timetable entry already exists for this time slot';
-      } else if (err.response.status === 404) {
-        errorMessage = 'Class, Subject, or Teacher not found';
-      } else if (err.response.data?.detail) {
-        errorMessage = err.response.data.detail;
       }
+      
+      alert(errorMessage);
+    } finally {
+      setFormLoading(false);
     }
-    
-    alert(errorMessage);
-  } finally {
-    setFormLoading(false);
-  }
-};
+  };
 
   const handleDelete = async () => {
     setFormLoading(true);
@@ -214,7 +189,7 @@ const onSubmit = async (data) => {
                               <IconButton size="small" color="error" onClick={() => { setSelectedItem(t); setOpenConfirm(true); }}>
                                 <Trash2 size={16} />
                               </IconButton>
-                            </Box>
+            </Box>
                           </Box>
                         </Grid>
                       );
@@ -308,6 +283,9 @@ const onSubmit = async (data) => {
                           <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
                         ))}
                       </Select>
+                      <FormHelperText sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'warning.main' }}>
+                        <AlertCircle size={14} /> Must be assigned to this class
+                      </FormHelperText>
                     </FormControl>
                   )} 
                 />
