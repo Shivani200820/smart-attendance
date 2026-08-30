@@ -21,6 +21,8 @@ import Classes from './pages/Admin/Classes';
 import Subjects from './pages/Admin/Subjects';
 import Analytics from './pages/Admin/Analytics';
 import Timetable from './pages/Admin/Timetable';
+import ClassSubjectAssignments from './pages/Admin/ClassSubjectAssignments';
+
 
 // Teacher
 import TeacherDashboard from './pages/Teacher/TeacherDashboard';
@@ -67,6 +69,7 @@ function App() {
               <Route path="/admin/classes" element={<Classes />} />
               <Route path="/admin/subjects" element={<Subjects />} />
               <Route path="/admin/analytics" element={<Analytics />} />
+              <Route path="/admin/class-subjects" element={<ClassSubjectAssignments />} />
             </Route>
 
             {/* Protected Teacher Routes */}
