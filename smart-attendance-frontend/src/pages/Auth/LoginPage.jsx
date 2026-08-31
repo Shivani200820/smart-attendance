@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { 
-  Box, Grid, Typography, TextField, Button, Paper, Alert, CircularProgress 
+  Box, Container, Typography, TextField, Button, Paper, Alert, 
+  CircularProgress, InputAdornment, IconButton
 } from '@mui/material';
-import { QrCode, Mail, Lock } from 'lucide-react';
+import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const LoginPage = () => {
@@ -12,6 +13,7 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: { email: '', password: '' }
@@ -22,7 +24,6 @@ const LoginPage = () => {
     setError('');
     try {
       const user = await login(data.email, data.password);
-      // Role-based redirection
       if (user.role === 'ADMIN') navigate('/admin/dashboard');
       else if (user.role === 'TEACHER') navigate('/teacher/dashboard');
       else if (user.role === 'STUDENT') navigate('/student/dashboard');
@@ -35,86 +36,172 @@ const LoginPage = () => {
   };
 
   return (
-    <Grid container sx={{ minHeight: '100vh' }}>
-      {/* Left Side: Branding */}
-      <Grid item xs={12} md={6} sx={{ 
-        bgcolor: 'secondary.main', 
-        color: 'white', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        p: 4,
-        backgroundImage: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)'
-      }}>
-        <Box sx={{ textAlign: 'center', maxWidth: '400px' }}>
-          <QrCode size={64} style={{ marginBottom: '24px', color: '#60A5FA' }} />
-          <Typography variant="h3" sx={{ fontWeight: 700, mb: 2 }}>SmartAttend</Typography>
-          <Typography variant="h6" sx={{ color: '#94A3B8', fontWeight: 400 }}>
-            Secure QR attendance, automatic calculations, and intelligent attendance insights — all in one platform.
+    <Box sx={{ 
+      minHeight: '100vh', 
+      bgcolor: '#F8FAFC',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      py: 4
+    }}>
+      <Container maxWidth="sm">
+        <Paper elevation={0} sx={{ 
+          p: { xs: 4, sm: 5 }, 
+          borderRadius: 3,
+          boxShadow: '0 10px 40px rgba(0,0,0,0.08)',
+          textAlign: 'center'
+        }}>
+          {/* User Icon */}
+          <Box sx={{ 
+            width: 72, 
+            height: 72, 
+            borderRadius: '50%', 
+            bgcolor: '#EFF6FF',
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            mx: 'auto', 
+            mb: 3 
+          }}>
+            <User size={36} color="#2563EB" />
+          </Box>
+
+          {/* Heading */}
+          <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: '#0F172A', fontSize: { xs: '2rem', sm: '2.5rem' } }}>
+            Welcome Back
           </Typography>
-        </Box>
-      </Grid>
-
-      {/* Right Side: Login Form */}
-      <Grid item xs={12} md={6} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 }}>
-        <Paper elevation={0} sx={{ p: 4, width: '100%', maxWidth: '400px', border: '1px solid #E2E8F0' }}>
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>Welcome Back</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4 }}>
-            Please enter your credentials to access your dashboard.
+          <Typography variant="body1" sx={{ color: '#64748B', mb: 5 }}>
+            Login to SmartAttend Portal
           </Typography>
 
-          {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+          {/* Error Alert */}
+          {error && (
+            <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+              {error}
+            </Alert>
+          )}
 
+          {/* Login Form */}
           <form onSubmit={handleSubmit(onSubmit)}>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Email Address</Typography>
+            {/* Email Field */}
+            <Box sx={{ mb: 2.5 }}>
               <TextField
                 fullWidth
-                placeholder="you@college.edu"
+                placeholder="Email Address"
                 {...register('email', { 
                   required: 'Email is required',
                   pattern: { value: /^\S+@\S+$/i, message: 'Invalid email format' }
                 })}
                 error={!!errors.email}
                 helperText={errors.email?.message}
-                InputProps={{ startAdornment: <Mail size={18} style={{ marginRight: 8, color: '#64748B' }} /> }}
+                InputProps={{ 
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Mail size={18} color="#94A3B8" />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2.5,
+                    bgcolor: 'white',
+                    '& fieldset': { borderColor: '#E2E8F0', borderWidth: 1.5 },
+                    '&:hover fieldset': { borderColor: '#2563EB' },
+                    '&.Mui-focused fieldset': { borderColor: '#2563EB', borderWidth: 2 },
+                  }
+                }}
               />
             </Box>
 
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Password</Typography>
+            {/* Password Field */}
+            <Box sx={{ mb: 2 }}>
               <TextField
                 fullWidth
-                type="password"
-                placeholder="••••••••"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
                 {...register('password', { required: 'Password is required' })}
                 error={!!errors.password}
                 helperText={errors.password?.message}
-                InputProps={{ startAdornment: <Lock size={18} style={{ marginRight: 8, color: '#64748B' }} /> }}
+                InputProps={{ 
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Lock size={18} color="#94A3B8" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton 
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        sx={{ color: '#94A3B8' }}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2.5,
+                    bgcolor: 'white',
+                    '& fieldset': { borderColor: '#E2E8F0', borderWidth: 1.5 },
+                    '&:hover fieldset': { borderColor: '#2563EB' },
+                    '&.Mui-focused fieldset': { borderColor: '#2563EB', borderWidth: 2 },
+                  }
+                }}
               />
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-              <Typography variant="body2" component={RouterLink} to="/forgot-password" sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+            {/* Forgot Password Link */}
+            <Box sx={{ textAlign: 'right', mb: 3 }}>
+              <Typography 
+                component={RouterLink} 
+                to="/forgot-password" 
+                sx={{ 
+                  color: '#2563EB', 
+                  textDecoration: 'none', 
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  '&:hover': { textDecoration: 'underline' } 
+                }}
+              >
                 Forgot Password?
               </Typography>
             </Box>
 
+            {/* Sign In Button */}
             <Button 
               type="submit" 
               variant="contained" 
               fullWidth 
               size="large" 
               disabled={loading}
-              sx={{ py: 1.5 }}
+              sx={{ 
+                py: 1.8, 
+                borderRadius: 2.5, 
+                bgcolor: '#2563EB',
+                fontSize: '1rem',
+                fontWeight: 600,
+                textTransform: 'none',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+                '&:hover': { 
+                  bgcolor: '#1D4ED8',
+                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.4)',
+                  transform: 'translateY(-1px)'
+                },
+                '&:disabled': {
+                  bgcolor: '#94A3B8',
+                  boxShadow: 'none'
+                },
+                transition: 'all 0.2s'
+              }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
             </Button>
           </form>
         </Paper>
-      </Grid>
-    </Grid>
+      </Container>
+    </Box>
   );
 };
 
