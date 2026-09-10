@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField, FormHelperText, Alert
+  FormControl, InputLabel, Select, MenuItem, TextField, Alert
 } from '@mui/material';
-import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle, Link2 } from 'lucide-react';
+import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DashboardLayout from '../../components/layouts/DashboardLayout';
 import { getTimetables, createTimetable, updateTimetable, deleteTimetable, getClasses, getSubjects, getTeachers } from '../../services/adminApi';
@@ -24,8 +24,8 @@ const Timetable = () => {
   const [openConfirm, setOpenConfirm] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
-  const [assigningSubject, setAssigningSubject] = useState(false);
-  const [showAssignmentHint, setShowAssignmentHint] = useState(false);
+  const [apiError, setApiError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const { control, handleSubmit, reset, formState: { errors }, watch } = useForm({
     defaultValues: {
@@ -61,6 +61,7 @@ const Timetable = () => {
       setTeachers(teaData);
     } catch (err) {
       console.error('Failed to load data', err);
+      setApiError('Failed to load timetable data');
     } finally {
       setLoading(false);
     }
@@ -69,33 +70,38 @@ const Timetable = () => {
   // Auto-assign subject to class if not already assigned
   const handleAutoAssign = async () => {
     if (!selectedClass || !selectedSubject) {
-      alert('Please select both class and subject first');
+      setApiError('Please select both class and subject first');
       return;
     }
 
-    setAssigningSubject(true);
     try {
+      // First check if already assigned
       await api.post('/admin/assignments/class-subject', {
         class_id: parseInt(selectedClass),
         subject_id: parseInt(selectedSubject)
       });
       
-      alert('✅ Subject assigned to class successfully! You can now create the timetable entry.');
-      setShowAssignmentHint(false);
+      setSuccessMessage('✅ Subject assigned to class successfully!');
+      setApiError('');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       if (err.response?.status === 409) {
-        alert('This subject is already assigned to this class. The error might be from another validation.');
+        setSuccessMessage('Subject is already assigned to this class');
+        setApiError('');
+        setTimeout(() => setSuccessMessage(''), 3000);
       } else {
-        alert(err.response?.data?.detail || 'Failed to assign subject');
+        setApiError(err.response?.data?.detail || 'Failed to assign subject');
+        setSuccessMessage('');
       }
-    } finally {
-      setAssigningSubject(false);
     }
   };
 
   const onSubmit = async (data) => {
     setFormLoading(true);
+    setApiError('');
+    
     try {
+      // Ensure we're sending correct data types
       const payload = {
         class_id: parseInt(data.class_id),
         subject_id: parseInt(data.subject_id),
@@ -105,6 +111,8 @@ const Timetable = () => {
         end_time: data.end_time,
         room: data.room || null
       };
+
+      console.log('Sending payload:', payload);
       
       if (selectedItem) {
         await updateTimetable(selectedItem.id, payload);
@@ -115,10 +123,12 @@ const Timetable = () => {
       setOpenForm(false);
       reset();
       setSelectedItem(null);
-      setShowAssignmentHint(false);
+      setSuccessMessage('Timetable entry created successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
       fetchData();
     } catch (err) {
       console.error('Error creating timetable:', err);
+      console.error('Error response:', err.response);
       
       let errorMessage = 'Operation failed';
       
@@ -130,19 +140,16 @@ const Timetable = () => {
           } else if (details) {
             errorMessage = details;
           }
-        } else if (err.response.status === 400 || err.response.data?.detail === "Subject is not assigned to this class") {
-          errorMessage = 'Subject is not assigned to this class. Please assign it first.';
-          setShowAssignmentHint(true); // Show the auto-assign button
+        } else if (err.response.status === 400) {
+          errorMessage = err.response.data.detail || 'Subject is not assigned to this class. Please assign it first.';
         } else if (err.response.status === 409) {
           errorMessage = 'A timetable entry already exists for this time slot';
         } else if (err.response.status === 404) {
           errorMessage = 'Class, Subject, or Teacher not found';
-        } else if (err.response.data?.detail) {
-          errorMessage = err.response.data.detail;
         }
       }
       
-      alert(errorMessage);
+      setApiError(errorMessage);
     } finally {
       setFormLoading(false);
     }
@@ -154,9 +161,11 @@ const Timetable = () => {
       await deleteTimetable(selectedItem.id);
       setOpenConfirm(false);
       setSelectedItem(null);
+      setSuccessMessage('Timetable entry deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
       fetchData();
     } catch (err) {
-      alert('Failed to delete timetable');
+      setApiError('Failed to delete timetable');
     } finally {
       setFormLoading(false);
     }
@@ -181,7 +190,8 @@ const Timetable = () => {
           onClick={() => {
             setSelectedItem(null);
             reset();
-            setShowAssignmentHint(false);
+            setApiError('');
+            setSuccessMessage('');
             setOpenForm(true);
           }}
         >
@@ -189,55 +199,17 @@ const Timetable = () => {
         </Button>
       </Box>
 
-      {/* Mobile View: Stacked Cards by Day */}
-      <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-        {DAYS.map(day => {
-          const dayClasses = timetables.filter(t => t.day_of_week === day && t.is_active);
-          return (
-            <Card key={day} sx={{ mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>{day}</Typography>
-                {dayClasses.length === 0 ? (
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>No classes</Typography>
-                ) : (
-                  <Grid container spacing={2}>
-                    {dayClasses.map((t) => {
-                      const subject = subjects.find(s => s.id === t.subject_id);
-                      const teacher = teachers.find(tea => tea.id === t.teacher_id);
-                      const cls = classes.find(c => c.id === t.class_id);
-                      return (
-                        <Grid item xs={12} key={t.id}>
-                          <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2, position: 'relative' }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{subject?.name || `Subject ${t.subject_id}`}</Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>{cls?.name || `Class ${t.class_id}`}</Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, color: 'text.secondary' }}>
-                              <Clock size={16} /> <Typography variant="body2">{t.start_time} - {t.end_time}</Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, color: 'text.secondary' }}>
-                              <MapPin size={16} /> <Typography variant="body2">{t.room || 'TBA'}</Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, color: 'text.secondary' }}>
-                              <User size={16} /> <Typography variant="body2">{teacher?.name || `Teacher ${t.teacher_id}`}</Typography>
-                            </Box>
-                            <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-                              <IconButton size="small" onClick={() => { setSelectedItem(t); reset(t); setOpenForm(true); }}>
-                                <Edit size={16} />
-                              </IconButton>
-                              <IconButton size="small" color="error" onClick={() => { setSelectedItem(t); setOpenConfirm(true); }}>
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </Box>
-                          </Box>
-                        </Grid>
-                      );
-                    })}
-                  </Grid>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </Box>
+      {apiError && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setApiError('')}>
+          {apiError}
+        </Alert>
+      )}
+      
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccessMessage('')}>
+          {successMessage}
+        </Alert>
+      )}
 
       {/* Desktop View: Weekly Grid */}
       <Box sx={{ display: { xs: 'none', md: 'block' } }}>
@@ -282,26 +254,16 @@ const Timetable = () => {
       </Box>
 
       {/* Add/Edit Timetable Dialog */}
-      <Dialog open={openForm} onClose={() => { setOpenForm(false); reset(); setShowAssignmentHint(false); }} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
+      <Dialog open={openForm} onClose={() => { setOpenForm(false); reset(); setApiError(''); }} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
             {selectedItem ? 'Edit Timetable' : 'Add Timetable Entry'}
           </DialogTitle>
           <DialogContent dividers sx={{ pt: 2 }}>
-            {showAssignmentHint && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  The selected subject is not assigned to this class.
-                </Typography>
-                <Button 
-                  size="small" 
-                  variant="contained" 
-                  startIcon={assigningSubject ? <CircularProgress size={16} color="inherit" /> : <Link2 size={14} />}
-                  onClick={handleAutoAssign}
-                  disabled={assigningSubject || !selectedClass || !selectedSubject}
-                >
-                  {assigningSubject ? 'Assigning...' : 'Auto-Assign Subject to Class'}
-                </Button>
+            
+            {successMessage && (
+              <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+                {successMessage}
               </Alert>
             )}
 
@@ -337,9 +299,12 @@ const Timetable = () => {
                           <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
                         ))}
                       </Select>
-                      <FormHelperText sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'warning.main' }}>
-                        <AlertCircle size={14} /> Must be assigned to this class
-                      </FormHelperText>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                        <AlertCircle size={14} style={{ color: '#F59E0B' }} />
+                        <Typography variant="caption" sx={{ color: '#F59E0B' }}>
+                          Must be assigned to this class
+                        </Typography>
+                      </Box>
                     </FormControl>
                   )} 
                 />
@@ -436,9 +401,24 @@ const Timetable = () => {
                 />
               </Grid>
             </Grid>
+
+            {/* Auto-Assign Button */}
+            {selectedClass && selectedSubject && (
+              <Box sx={{ mt: 2 }}>
+                <Button 
+                  size="small" 
+                  variant="outlined" 
+                  onClick={handleAutoAssign}
+                  startIcon={<Plus size={16} />}
+                  sx={{ textTransform: 'none' }}
+                >
+                  Auto-Assign Subject to Class
+                </Button>
+              </Box>
+            )}
           </DialogContent>
           <DialogActions sx={{ p: 2.5, pt: 2 }}>
-            <Button onClick={() => { setOpenForm(false); reset(); setShowAssignmentHint(false); }} disabled={formLoading}>Cancel</Button>
+            <Button onClick={() => { setOpenForm(false); reset(); setApiError(''); }} disabled={formLoading}>Cancel</Button>
             <Button type="submit" variant="contained" disabled={formLoading}>
               {formLoading ? <CircularProgress size={24} color="inherit" /> : (selectedItem ? 'Update' : 'Add')}
             </Button>
