@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField, Alert, Stepper, Step, StepLabel
+  FormControl, InputLabel, Select, MenuItem, TextField, Alert
 } from '@mui/material';
 import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle, CheckCircle2, Link2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
@@ -25,7 +25,7 @@ const Timetable = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [apiError, setApiError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [assignStatus, setAssignStatus] = useState(''); // 'success' | 'already' | 'error'
+  const [assignStatus, setAssignStatus] = useState(''); 
   const [isSubjectAssigned, setIsSubjectAssigned] = useState(false);
 
   const { control, handleSubmit, reset, formState: { errors }, watch } = useForm({
@@ -68,7 +68,7 @@ const Timetable = () => {
     }
   };
 
-  // Check if subject is already assigned to class
+  // Check/Force assignment of subject to class
   const checkAssignment = async (classId, subjectId) => {
     if (!classId || !subjectId) {
       setIsSubjectAssigned(false);
@@ -77,33 +77,31 @@ const Timetable = () => {
     }
 
     try {
-      // Try to assign - if 409, it means already assigned (which is good!)
       const res = await api.post('/admin/assignments/class-subject', {
         class_id: parseInt(classId),
         subject_id: parseInt(subjectId)
       });
-      
       setIsSubjectAssigned(true);
       setAssignStatus('success');
       setSuccessMessage('✅ Subject successfully linked to class!');
       setApiError('');
     } catch (err) {
       if (err.response?.status === 409) {
-        // Already assigned - this is GOOD
+        // 409 means it's ALREADY assigned, which is EXACTLY what we want!
         setIsSubjectAssigned(true);
         setAssignStatus('already');
-        setSuccessMessage('✅ Subject is already linked to this class');
+        setSuccessMessage('✅ Subject is already linked to this class.');
         setApiError('');
       } else {
         setIsSubjectAssigned(false);
         setAssignStatus('error');
-        setApiError('Failed to link subject to class. Please try again.');
+        setApiError(`Failed to link subject: ${err.response?.data?.detail || err.message}`);
         setSuccessMessage('');
       }
     }
   };
 
-  // Watch for class/subject changes
+  // Auto-check assignment when class or subject changes
   useEffect(() => {
     if (selectedClass && selectedSubject) {
       checkAssignment(selectedClass, selectedSubject);
@@ -119,24 +117,23 @@ const Timetable = () => {
     setSuccessMessage('');
     
     try {
-      // Ensure subject is assigned first
+      // Force assignment check right before submitting
       if (!isSubjectAssigned) {
         await checkAssignment(data.class_id, data.subject_id);
-        // Wait a bit for the assignment to complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for DB to register
       }
 
       const payload = {
         class_id: parseInt(data.class_id),
         subject_id: parseInt(data.subject_id),
         teacher_id: parseInt(data.teacher_id),
-        day_of_week: data.day_of_week,
+        day_of_week: data.day_of_week, // Backend usually expects "Monday", "Tuesday", etc.
         start_time: data.start_time,
         end_time: data.end_time,
         room: data.room || null
       };
 
-      console.log('Sending payload:', payload);
+      console.log('🚀 Sending Payload to Backend:', JSON.stringify(payload, null, 2));
       
       if (selectedItem) {
         await updateTimetable(selectedItem.id, payload);
@@ -154,8 +151,7 @@ const Timetable = () => {
       setTimeout(() => setSuccessMessage(''), 3000);
       fetchData();
     } catch (err) {
-      console.error('Error creating timetable:', err);
-      console.error('Error response:', err.response?.data);
+      console.error('❌ Backend Error Response:', err.response?.data);
       
       let errorMessage = 'Operation failed';
       
@@ -166,18 +162,21 @@ const Timetable = () => {
         if (status === 422) {
           const details = data.detail;
           if (Array.isArray(details)) {
-            errorMessage = details.map(d => `${d.loc?.join('.') || 'field'}: ${d.msg}`).join(', ');
+            errorMessage = details.map(d => `${d.loc?.join('.') || 'field'}: ${d.msg}`).join(' | ');
           } else {
             errorMessage = details || 'Validation error';
           }
         } else if (status === 400) {
-          errorMessage = data.detail || 'Subject must be assigned to this class first. Please select a valid subject.';
+          // Show the EXACT backend message so we know why it failed
+          errorMessage = data.detail 
+            ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) 
+            : 'Bad Request: The subject might not be assigned to this class, or the teacher is already booked at this time.';
         } else if (status === 409) {
-          errorMessage = 'A timetable entry already exists for this time slot';
+          errorMessage = 'A timetable entry already exists for this exact time slot.';
         } else if (status === 404) {
-          errorMessage = 'Class, Subject, or Teacher not found';
+          errorMessage = 'Class, Subject, or Teacher not found in database.';
         } else {
-          errorMessage = data.detail || `Error ${status}: ${JSON.stringify(data)}`;
+          errorMessage = `Error ${status}: ${JSON.stringify(data)}`;
         }
       }
       
@@ -234,7 +233,7 @@ const Timetable = () => {
       </Box>
 
       {apiError && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setApiError('')}>
+        <Alert severity="error" sx={{ mb: 3, whiteSpace: 'pre-wrap' }} onClose={() => setApiError('')}>
           {apiError}
         </Alert>
       )}
@@ -259,15 +258,19 @@ const Timetable = () => {
                   return (
                     <Card key={t.id} variant="outlined" sx={{ p: 2, position: 'relative' }}>
                       <Box sx={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 0.5 }}>
-                        <IconButton size="small" onClick={() => { setSelectedItem(t); reset({
-                          class_id: t.class_id,
-                          subject_id: t.subject_id,
-                          teacher_id: t.teacher_id,
-                          day_of_week: t.day_of_week,
-                          start_time: t.start_time,
-                          end_time: t.end_time,
-                          room: t.room || ''
-                        }); setOpenForm(true); }}>
+                        <IconButton size="small" onClick={() => { 
+                          setSelectedItem(t); 
+                          reset({
+                            class_id: t.class_id,
+                            subject_id: t.subject_id,
+                            teacher_id: t.teacher_id,
+                            day_of_week: t.day_of_week,
+                            start_time: t.start_time,
+                            end_time: t.end_time,
+                            room: t.room || ''
+                          }); 
+                          setOpenForm(true); 
+                        }}>
                           <Edit size={14} />
                         </IconButton>
                         <IconButton size="small" color="error" onClick={() => { setSelectedItem(t); setOpenConfirm(true); }}>
