@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField, Alert, Stepper, Step, StepLabel
+  FormControl, InputLabel, Select, MenuItem, TextField, Alert
 } from '@mui/material';
 import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle, CheckCircle2, Link2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
@@ -43,6 +43,7 @@ const Timetable = () => {
   const selectedClass = watch('class_id');
   const selectedSubject = watch('subject_id');
   const selectedTeacher = watch('teacher_id');
+  const selectedDay = watch('day_of_week');
 
   useEffect(() => {
     fetchData();
@@ -69,7 +70,6 @@ const Timetable = () => {
     }
   };
 
-  // Step 1: Assign Subject to Class
   const assignSubjectToClass = async (classId, subjectId) => {
     if (!classId || !subjectId) return false;
     
@@ -78,14 +78,13 @@ const Timetable = () => {
         class_id: parseInt(classId),
         subject_id: parseInt(subjectId)
       });
-      return true; // Success
+      return true;
     } catch (err) {
-      if (err.response?.status === 409) return true; // Already assigned
-      return false; // Failed
+      if (err.response?.status === 409) return true;
+      return false;
     }
   };
 
-  // Step 2: Assign Teacher to Subject
   const assignTeacherToSubject = async (teacherId, subjectId) => {
     if (!teacherId || !subjectId) return false;
     
@@ -94,15 +93,14 @@ const Timetable = () => {
         teacher_id: parseInt(teacherId),
         subject_id: parseInt(subjectId)
       });
-      return true; // Success
+      return true;
     } catch (err) {
-      if (err.response?.status === 409) return true; // Already assigned
+      if (err.response?.status === 409) return true;
       console.error('Teacher-Subject assignment error:', err);
-      return false; // Failed
+      return false;
     }
   };
 
-  // Check all assignments when selections change
   useEffect(() => {
     const checkAllAssignments = async () => {
       if (!selectedClass || !selectedSubject || !selectedTeacher) {
@@ -110,15 +108,12 @@ const Timetable = () => {
         return;
       }
 
-      // Check Class-Subject
       const classSubjectOk = await assignSubjectToClass(selectedClass, selectedSubject);
       setAssignStatus(prev => ({ ...prev, classSubject: classSubjectOk ? 'success' : 'error' }));
 
-      // Check Teacher-Subject
       const teacherSubjectOk = await assignTeacherToSubject(selectedTeacher, selectedSubject);
       setAssignStatus(prev => ({ ...prev, teacherSubject: teacherSubjectOk ? 'success' : 'error' }));
 
-      // Enable form only if both are assigned
       setIsReady(classSubjectOk && teacherSubjectOk);
     };
 
@@ -130,13 +125,31 @@ const Timetable = () => {
     setApiError('');
     setSuccessMessage('');
     
+    // Validate time range
+    const start = new Date(`2000-01-01 ${data.start_time}`);
+    const end = new Date(`2000-01-01 ${data.end_time}`);
+    const durationHours = (end - start) / (1000 * 60 * 60);
+    
+    if (durationHours <= 0) {
+      alert('❌ End time must be after start time!');
+      setFormLoading(false);
+      return;
+    }
+    
+    if (durationHours > 4) {
+      alert(`⚠️ Warning: This class is ${durationHours} hours long. Are you sure this is correct?\n\nMost classes are 1-2 hours.`);
+      if (!window.confirm('Click OK to proceed anyway, or Cancel to fix the time.')) {
+        setFormLoading(false);
+        return;
+      }
+    }
+    
     try {
-      // Final check: ensure both assignments exist
       const classSubjectOk = await assignSubjectToClass(data.class_id, data.subject_id);
       const teacherSubjectOk = await assignTeacherToSubject(data.teacher_id, data.subject_id);
       
       if (!classSubjectOk || !teacherSubjectOk) {
-        throw new Error('Failed to setup required assignments. Please try again.');
+        throw new Error('Failed to setup required assignments.');
       }
 
       const payload = {
@@ -173,21 +186,37 @@ const Timetable = () => {
         ? JSON.stringify(err.response.data, null, 2) 
         : err.message;
       
-      alert(` Backend Rejected Request!\n\nStatus: ${err.response?.status}\n\nDetails:\n${errorDetails}`);
-      
+      let userMessage = 'Backend Rejected Request!';
       let errorMessage = 'Operation failed';
+      
       if (err.response) {
         const status = err.response.status;
         const data = err.response.data;
+        
         if (status === 400) {
-          errorMessage = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+          const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+          
+          if (detail.includes('Timetable conflict detected') || detail.includes('conflict')) {
+            userMessage = '⚠️ Scheduling Conflict!\n\nThis time slot is already booked. Possible reasons:\n\n1. Teacher is teaching another class\n2. Room is already reserved\n3. Class already has a subject at this time\n\nPlease choose a different time, teacher, or room.';
+            errorMessage = detail;
+          } else if (detail.includes('not assigned')) {
+            userMessage = `⚠️ Missing Assignment\n\n${detail}\n\nPlease ensure all required assignments are made.`;
+            errorMessage = detail;
+          } else {
+            userMessage = `Backend Error\n\n${detail}`;
+            errorMessage = detail;
+          }
         } else if (status === 409) {
-          errorMessage = 'A timetable entry already exists for this time slot.';
+          userMessage = '️ Duplicate Entry\n\nA timetable entry already exists for this exact time slot.';
+          errorMessage = 'Timetable entry already exists';
         } else if (status === 422) {
           const details = data.detail;
           errorMessage = Array.isArray(details) ? details.map(d => `${d.loc?.join('.')}: ${d.msg}`).join(' | ') : 'Validation error';
+          userMessage = `Validation Error\n\n${errorMessage}`;
         }
       }
+      
+      alert(userMessage);
       setApiError(errorMessage);
     } finally {
       setFormLoading(false);
@@ -331,6 +360,36 @@ const Timetable = () => {
                 {assignStatus.teacherSubject === 'success' ? 'Teacher linked to Subject ✓' : 'Linking teacher to subject...'}
               </Alert>
             </Box>
+
+            {/* ✅ EXISTING CLASSES DISPLAY FOR SELECTED DAY */}
+            {selectedDay && (
+              <Box sx={{ mb: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: '#0f172a' }}>
+                  {selectedDay} चे Existing Classes:
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {timetables
+                    .filter(t => t.day_of_week === selectedDay && t.is_active !== false)
+                    .map((t) => {
+                      const subject = subjects.find(s => s.id === t.subject_id);
+                      const teacher = teachers.find(tea => tea.id === t.teacher_id);
+                      const cls = classes.find(c => c.id === t.class_id);
+                      return (
+                        <Chip 
+                          key={t.id}
+                          label={`${t.start_time}-${t.end_time}: ${subject?.name || 'Subject'} (${cls?.name || 'Class'})`}
+                          sx={{ bgcolor: '#fee2e2', color: '#991b1b', fontSize: '0.75rem' }}
+                        />
+                      );
+                    })}
+                  {timetables.filter(t => t.day_of_week === selectedDay && t.is_active !== false).length === 0 && (
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+                      {selectedDay} ला अजून कोणतेही classes नाहीत
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            )}
 
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
