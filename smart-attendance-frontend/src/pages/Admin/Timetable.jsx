@@ -110,7 +110,6 @@ const Timetable = () => {
       setAssignStatus('');
     }
   }, [selectedClass, selectedSubject]);
-
   const onSubmit = async (data) => {
     setFormLoading(true);
     setApiError('');
@@ -127,7 +126,7 @@ const Timetable = () => {
         class_id: parseInt(data.class_id),
         subject_id: parseInt(data.subject_id),
         teacher_id: parseInt(data.teacher_id),
-        day_of_week: data.day_of_week, // Backend usually expects "Monday", "Tuesday", etc.
+        day_of_week: data.day_of_week.toUpperCase(), // Try uppercase (e.g., "WEDNESDAY") as some backends require it
         start_time: data.start_time,
         end_time: data.end_time,
         room: data.room || null
@@ -153,33 +152,26 @@ const Timetable = () => {
     } catch (err) {
       console.error('❌ Backend Error Response:', err.response?.data);
       
-      let errorMessage = 'Operation failed';
+      // 🚨 SHOW EXACT BACKEND ERROR IN AN ALERT POPUP 🚨
+      const errorDetails = err.response?.data 
+        ? JSON.stringify(err.response.data, null, 2) 
+        : err.message;
       
+      alert(`❌ Backend Rejected Request!\n\nStatus: ${err.response?.status}\n\nDetails:\n${errorDetails}`);
+      
+      let errorMessage = 'Operation failed';
       if (err.response) {
         const status = err.response.status;
         const data = err.response.data;
-        
-        if (status === 422) {
-          const details = data.detail;
-          if (Array.isArray(details)) {
-            errorMessage = details.map(d => `${d.loc?.join('.') || 'field'}: ${d.msg}`).join(' | ');
-          } else {
-            errorMessage = details || 'Validation error';
-          }
-        } else if (status === 400) {
-          // Show the EXACT backend message so we know why it failed
-          errorMessage = data.detail 
-            ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) 
-            : 'Bad Request: The subject might not be assigned to this class, or the teacher is already booked at this time.';
+        if (status === 400) {
+          errorMessage = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
         } else if (status === 409) {
           errorMessage = 'A timetable entry already exists for this exact time slot.';
-        } else if (status === 404) {
-          errorMessage = 'Class, Subject, or Teacher not found in database.';
-        } else {
-          errorMessage = `Error ${status}: ${JSON.stringify(data)}`;
+        } else if (status === 422) {
+          const details = data.detail;
+          errorMessage = Array.isArray(details) ? details.map(d => `${d.loc?.join('.')}: ${d.msg}`).join(' | ') : 'Validation error';
         }
       }
-      
       setApiError(errorMessage);
     } finally {
       setFormLoading(false);
