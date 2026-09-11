@@ -125,112 +125,74 @@ const Timetable = () => {
     checkAllAssignments();
   }, [selectedClass, selectedSubject, selectedTeacher]);
 
- // Just update the onSubmit function in your existing Timetable.jsx:
-
-const onSubmit = async (data) => {
-  setFormLoading(true);
-  setApiError('');
-  setSuccessMessage('');
-  
-  // Validate time range
-  const start = new Date(`2000-01-01 ${data.start_time}`);
-  const end = new Date(`2000-01-01 ${data.end_time}`);
-  const durationHours = (end - start) / (1000 * 60 * 60);
-  
-  if (durationHours <= 0) {
-    alert('❌ End time must be after start time!');
-    setFormLoading(false);
-    return;
-  }
-  
-  if (durationHours > 4) {
-    alert(`️ Warning: This class is ${durationHours} hours long. Are you sure this is correct?\n\nMost classes are 1-2 hours.`);
-    if (!window.confirm('Click OK to proceed anyway, or Cancel to fix the time.')) {
-      setFormLoading(false);
-      return;
-    }
-  }
-  
-  try {
-    // Ensure assignments exist
-    const classSubjectOk = await assignSubjectToClass(data.class_id, data.subject_id);
-    const teacherSubjectOk = await assignTeacherToSubject(data.teacher_id, data.subject_id);
+  const onSubmit = async (data) => {
+    setFormLoading(true);
+    setApiError('');
+    setSuccessMessage('');
     
-    if (!classSubjectOk || !teacherSubjectOk) {
-      throw new Error('Failed to setup required assignments.');
-    }
-
-    const payload = {
-      class_id: parseInt(data.class_id),
-      subject_id: parseInt(data.subject_id),
-      teacher_id: parseInt(data.teacher_id),
-      day_of_week: data.day_of_week.toUpperCase(),
-      start_time: data.start_time,
-      end_time: data.end_time,
-      room: data.room || null
-    };
-
-    console.log('🚀 Sending Payload:', payload);
-    
-    if (selectedItem) {
-      await updateTimetable(selectedItem.id, payload);
-      setSuccessMessage('✅ Timetable updated successfully!');
-    } else {
-      await createTimetable(payload);
-      setSuccessMessage('✅ Timetable entry created successfully!');
-    }
-    
-    setOpenForm(false);
-    reset();
-    setSelectedItem(null);
-    setIsReady(false);
-    setAssignStatus({ classSubject: '', teacherSubject: '' });
-    setTimeout(() => setSuccessMessage(''), 3000);
-    fetchData();
-  } catch (err) {
-    console.error('❌ Backend Error:', err.response?.data);
-    
-    const errorDetails = err.response?.data 
-      ? JSON.stringify(err.response.data, null, 2) 
-      : err.message;
-    
-    // Show specific error based on status
-    let userMessage = 'Backend Rejected Request!';
-    let errorMessage = 'Operation failed';
-    
-    if (err.response) {
-      const status = err.response.status;
-      const data = err.response.data;
+    try {
+      // Final check: ensure both assignments exist
+      const classSubjectOk = await assignSubjectToClass(data.class_id, data.subject_id);
+      const teacherSubjectOk = await assignTeacherToSubject(data.teacher_id, data.subject_id);
       
-      if (status === 400) {
-        const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
-        
-        if (detail.includes('Timetable conflict detected') || detail.includes('conflict')) {
-          userMessage = '⚠️ Scheduling Conflict!\n\nThis time slot is already booked. Possible reasons:\n\n1. Teacher is teaching another class\n2. Room is already reserved\n3. Class already has a subject at this time\n\nPlease choose a different time, teacher, or room.';
-          errorMessage = detail;
-        } else if (detail.includes('not assigned')) {
-          userMessage = `⚠️ Missing Assignment\n\n${detail}\n\nPlease ensure all required assignments are made.`;
-          errorMessage = detail;
-        } else {
-          userMessage = ` Backend Error\n\n${detail}`;
-          errorMessage = detail;
-        }
-      } else if (status === 409) {
-        userMessage = '⚠️ Duplicate Entry\n\nA timetable entry already exists for this exact time slot.';
-        errorMessage = 'Timetable entry already exists';
-      } else if (status === 422) {
-        const details = data.detail;
-        errorMessage = Array.isArray(details) ? details.map(d => `${d.loc?.join('.')}: ${d.msg}`).join(' | ') : 'Validation error';
-        userMessage = ` Validation Error\n\n${errorMessage}`;
+      if (!classSubjectOk || !teacherSubjectOk) {
+        throw new Error('Failed to setup required assignments. Please try again.');
       }
+
+      const payload = {
+        class_id: parseInt(data.class_id),
+        subject_id: parseInt(data.subject_id),
+        teacher_id: parseInt(data.teacher_id),
+        day_of_week: data.day_of_week.toUpperCase(),
+        start_time: data.start_time,
+        end_time: data.end_time,
+        room: data.room || null
+      };
+
+      console.log('🚀 Sending Payload:', payload);
+      
+      if (selectedItem) {
+        await updateTimetable(selectedItem.id, payload);
+        setSuccessMessage('✅ Timetable updated successfully!');
+      } else {
+        await createTimetable(payload);
+        setSuccessMessage('✅ Timetable entry created successfully!');
+      }
+      
+      setOpenForm(false);
+      reset();
+      setSelectedItem(null);
+      setIsReady(false);
+      setAssignStatus({ classSubject: '', teacherSubject: '' });
+      setTimeout(() => setSuccessMessage(''), 3000);
+      fetchData();
+    } catch (err) {
+      console.error('❌ Backend Error:', err.response?.data);
+      
+      const errorDetails = err.response?.data 
+        ? JSON.stringify(err.response.data, null, 2) 
+        : err.message;
+      
+      alert(` Backend Rejected Request!\n\nStatus: ${err.response?.status}\n\nDetails:\n${errorDetails}`);
+      
+      let errorMessage = 'Operation failed';
+      if (err.response) {
+        const status = err.response.status;
+        const data = err.response.data;
+        if (status === 400) {
+          errorMessage = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        } else if (status === 409) {
+          errorMessage = 'A timetable entry already exists for this time slot.';
+        } else if (status === 422) {
+          const details = data.detail;
+          errorMessage = Array.isArray(details) ? details.map(d => `${d.loc?.join('.')}: ${d.msg}`).join(' | ') : 'Validation error';
+        }
+      }
+      setApiError(errorMessage);
+    } finally {
+      setFormLoading(false);
     }
-    
-    alert(userMessage);
-    setApiError(errorMessage);
-  } finally {
-    setFormLoading(false);
-  }
-};
+  };
 
   const handleDelete = async () => {
     setFormLoading(true);
