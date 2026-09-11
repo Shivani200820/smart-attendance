@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Grid, Card, CardContent, Typography, Box, Chip, CircularProgress, 
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, TextField, Alert
+  FormControl, InputLabel, Select, MenuItem, TextField, Alert, Stepper, Step, StepLabel
 } from '@mui/material';
 import { Clock, MapPin, User, Plus, Edit, Trash2, AlertCircle, CheckCircle2, Link2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
@@ -25,8 +25,8 @@ const Timetable = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [apiError, setApiError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [assignStatus, setAssignStatus] = useState(''); 
-  const [isSubjectAssigned, setIsSubjectAssigned] = useState(false);
+  const [assignStatus, setAssignStatus] = useState({ classSubject: '', teacherSubject: '' });
+  const [isReady, setIsReady] = useState(false);
 
   const { control, handleSubmit, reset, formState: { errors }, watch } = useForm({
     defaultValues: {
@@ -42,6 +42,7 @@ const Timetable = () => {
 
   const selectedClass = watch('class_id');
   const selectedSubject = watch('subject_id');
+  const selectedTeacher = watch('teacher_id');
 
   useEffect(() => {
     fetchData();
@@ -68,71 +69,87 @@ const Timetable = () => {
     }
   };
 
-  // Check/Force assignment of subject to class
-  const checkAssignment = async (classId, subjectId) => {
-    if (!classId || !subjectId) {
-      setIsSubjectAssigned(false);
-      setAssignStatus('');
-      return;
-    }
-
+  // Step 1: Assign Subject to Class
+  const assignSubjectToClass = async (classId, subjectId) => {
+    if (!classId || !subjectId) return false;
+    
     try {
-      const res = await api.post('/admin/assignments/class-subject', {
+      await api.post('/admin/assignments/class-subject', {
         class_id: parseInt(classId),
         subject_id: parseInt(subjectId)
       });
-      setIsSubjectAssigned(true);
-      setAssignStatus('success');
-      setSuccessMessage('✅ Subject successfully linked to class!');
-      setApiError('');
+      return true; // Success
     } catch (err) {
-      if (err.response?.status === 409) {
-        // 409 means it's ALREADY assigned, which is EXACTLY what we want!
-        setIsSubjectAssigned(true);
-        setAssignStatus('already');
-        setSuccessMessage('✅ Subject is already linked to this class.');
-        setApiError('');
-      } else {
-        setIsSubjectAssigned(false);
-        setAssignStatus('error');
-        setApiError(`Failed to link subject: ${err.response?.data?.detail || err.message}`);
-        setSuccessMessage('');
-      }
+      if (err.response?.status === 409) return true; // Already assigned
+      return false; // Failed
     }
   };
 
-  // Auto-check assignment when class or subject changes
-  useEffect(() => {
-    if (selectedClass && selectedSubject) {
-      checkAssignment(selectedClass, selectedSubject);
-    } else {
-      setIsSubjectAssigned(false);
-      setAssignStatus('');
+  // Step 2: Assign Teacher to Subject
+  const assignTeacherToSubject = async (teacherId, subjectId) => {
+    if (!teacherId || !subjectId) return false;
+    
+    try {
+      await api.post('/admin/assignments/teacher-subject', {
+        teacher_id: parseInt(teacherId),
+        subject_id: parseInt(subjectId)
+      });
+      return true; // Success
+    } catch (err) {
+      if (err.response?.status === 409) return true; // Already assigned
+      console.error('Teacher-Subject assignment error:', err);
+      return false; // Failed
     }
-  }, [selectedClass, selectedSubject]);
+  };
+
+  // Check all assignments when selections change
+  useEffect(() => {
+    const checkAllAssignments = async () => {
+      if (!selectedClass || !selectedSubject || !selectedTeacher) {
+        setIsReady(false);
+        return;
+      }
+
+      // Check Class-Subject
+      const classSubjectOk = await assignSubjectToClass(selectedClass, selectedSubject);
+      setAssignStatus(prev => ({ ...prev, classSubject: classSubjectOk ? 'success' : 'error' }));
+
+      // Check Teacher-Subject
+      const teacherSubjectOk = await assignTeacherToSubject(selectedTeacher, selectedSubject);
+      setAssignStatus(prev => ({ ...prev, teacherSubject: teacherSubjectOk ? 'success' : 'error' }));
+
+      // Enable form only if both are assigned
+      setIsReady(classSubjectOk && teacherSubjectOk);
+    };
+
+    checkAllAssignments();
+  }, [selectedClass, selectedSubject, selectedTeacher]);
+
   const onSubmit = async (data) => {
     setFormLoading(true);
     setApiError('');
     setSuccessMessage('');
     
     try {
-      // Force assignment check right before submitting
-      if (!isSubjectAssigned) {
-        await checkAssignment(data.class_id, data.subject_id);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for DB to register
+      // Final check: ensure both assignments exist
+      const classSubjectOk = await assignSubjectToClass(data.class_id, data.subject_id);
+      const teacherSubjectOk = await assignTeacherToSubject(data.teacher_id, data.subject_id);
+      
+      if (!classSubjectOk || !teacherSubjectOk) {
+        throw new Error('Failed to setup required assignments. Please try again.');
       }
 
       const payload = {
         class_id: parseInt(data.class_id),
         subject_id: parseInt(data.subject_id),
         teacher_id: parseInt(data.teacher_id),
-        day_of_week: data.day_of_week.toUpperCase(), // Try uppercase (e.g., "WEDNESDAY") as some backends require it
+        day_of_week: data.day_of_week.toUpperCase(),
         start_time: data.start_time,
         end_time: data.end_time,
         room: data.room || null
       };
 
-      console.log('🚀 Sending Payload to Backend:', JSON.stringify(payload, null, 2));
+      console.log('🚀 Sending Payload:', payload);
       
       if (selectedItem) {
         await updateTimetable(selectedItem.id, payload);
@@ -145,19 +162,18 @@ const Timetable = () => {
       setOpenForm(false);
       reset();
       setSelectedItem(null);
-      setIsSubjectAssigned(false);
-      setAssignStatus('');
+      setIsReady(false);
+      setAssignStatus({ classSubject: '', teacherSubject: '' });
       setTimeout(() => setSuccessMessage(''), 3000);
       fetchData();
     } catch (err) {
-      console.error('❌ Backend Error Response:', err.response?.data);
+      console.error('❌ Backend Error:', err.response?.data);
       
-      // 🚨 SHOW EXACT BACKEND ERROR IN AN ALERT POPUP 🚨
       const errorDetails = err.response?.data 
         ? JSON.stringify(err.response.data, null, 2) 
         : err.message;
       
-      alert(`❌ Backend Rejected Request!\n\nStatus: ${err.response?.status}\n\nDetails:\n${errorDetails}`);
+      alert(` Backend Rejected Request!\n\nStatus: ${err.response?.status}\n\nDetails:\n${errorDetails}`);
       
       let errorMessage = 'Operation failed';
       if (err.response) {
@@ -166,7 +182,7 @@ const Timetable = () => {
         if (status === 400) {
           errorMessage = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
         } else if (status === 409) {
-          errorMessage = 'A timetable entry already exists for this exact time slot.';
+          errorMessage = 'A timetable entry already exists for this time slot.';
         } else if (status === 422) {
           const details = data.detail;
           errorMessage = Array.isArray(details) ? details.map(d => `${d.loc?.join('.')}: ${d.msg}`).join(' | ') : 'Validation error';
@@ -215,8 +231,8 @@ const Timetable = () => {
             reset();
             setApiError('');
             setSuccessMessage('');
-            setIsSubjectAssigned(false);
-            setAssignStatus('');
+            setIsReady(false);
+            setAssignStatus({ classSubject: '', teacherSubject: '' });
             setOpenForm(true);
           }}
         >
@@ -225,7 +241,7 @@ const Timetable = () => {
       </Box>
 
       {apiError && (
-        <Alert severity="error" sx={{ mb: 3, whiteSpace: 'pre-wrap' }} onClose={() => setApiError('')}>
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setApiError('')}>
           {apiError}
         </Alert>
       )}
@@ -298,20 +314,23 @@ const Timetable = () => {
           </DialogTitle>
           <DialogContent dividers sx={{ pt: 2 }}>
             
-            {/* Assignment Status Indicator */}
-            {selectedClass && selectedSubject && (
+            {/* Assignment Status Indicators */}
+            <Box sx={{ mb: 3 }}>
               <Alert 
-                severity={assignStatus === 'error' ? 'error' : 'success'} 
-                sx={{ mb: 2 }}
-                icon={assignStatus === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+                severity={assignStatus.classSubject === 'error' ? 'error' : 'success'} 
+                sx={{ mb: 1, fontSize: '0.8rem' }}
+                icon={assignStatus.classSubject === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
               >
-                {assignStatus === 'already' 
-                  ? 'Subject is already linked to this class ✓' 
-                  : assignStatus === 'success' 
-                  ? 'Subject successfully linked to this class ✓'
-                  : 'Linking subject to class...'}
+                {assignStatus.classSubject === 'success' ? 'Subject linked to Class ✓' : 'Linking subject to class...'}
               </Alert>
-            )}
+              <Alert 
+                severity={assignStatus.teacherSubject === 'error' ? 'error' : 'success'} 
+                sx={{ mb: 1, fontSize: '0.8rem' }}
+                icon={assignStatus.teacherSubject === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+              >
+                {assignStatus.teacherSubject === 'success' ? 'Teacher linked to Subject ✓' : 'Linking teacher to subject...'}
+              </Alert>
+            </Box>
 
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
@@ -447,8 +466,8 @@ const Timetable = () => {
             <Button 
               type="submit" 
               variant="contained" 
-              disabled={formLoading || !isSubjectAssigned}
-              startIcon={isSubjectAssigned ? <CheckCircle2 size={16} /> : <Link2 size={16} />}
+              disabled={formLoading || !isReady}
+              startIcon={isReady ? <CheckCircle2 size={16} /> : <Link2 size={16} />}
             >
               {formLoading ? <CircularProgress size={24} color="inherit" /> : (selectedItem ? 'Update' : 'Add')}
             </Button>
